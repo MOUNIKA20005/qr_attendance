@@ -15,6 +15,32 @@
   color: #ffeb3b;
 }
 
+.tab-buttons {
+  margin-bottom: 20px;
+}
+
+.tab-buttons button {
+  margin: 0 10px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  background-color: #555;
+  color: #fff;
+  transition: 0.3s;
+}
+
+.tab-buttons button.active {
+  background-color: #ffeb3b;
+  color: #000;
+}
+
+.tab-buttons button:hover {
+  opacity: 0.9;
+}
+
 .input-subject {
   padding: 10px 15px;
   font-size: 16px;

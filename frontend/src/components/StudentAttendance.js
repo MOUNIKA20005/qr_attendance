@@ -2,49 +2,40 @@ import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import axios from "axios";
 import { io } from "socket.io-client";
-import "./StudentDashboard.css";
+import "./StudentAttendance.css";
 
 const socket = io("http://localhost:5000");
 
-const StudentDashboard = ({ user }) => {
+const StudentAttendance = ({ user }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const scanningRef = useRef(true);
 
-  const [message, setMessage] = useState("Scanning QR…");
-  const [records, setRecords] = useState([]);
-  const [summary, setSummary] = useState([]);
-  const [showRecords, setShowRecords] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-
-  /* ===================== LEAVE STATE (ADDED) ===================== */
-  const [leaveDate, setLeaveDate] = useState("");
-  const [leaveReason, setLeaveReason] = useState("");
-  const [leaveMessage, setLeaveMessage] = useState("");
-  const [myLeaves, setMyLeaves] = useState([]);
+  const [message, setMessage] = useState("Enter secret code and device ID, then scan QR…");
+  const [secretCode, setSecretCode] = useState("");
+  const [deviceId, setDeviceId] = useState("");
 
   useEffect(() => {
-    startCamera();
-
     if (user?._id) socket.emit("joinRoom", user._id);
 
     socket.on("attendanceReminder", (data) => {
-      setNotifications(prev => [
-        { ...data, id: Date.now() },
-        ...prev.slice(0, 4)
-      ]);
+      setMessage(`🔔 ${data.message}`);
     });
 
     return () => {
-      stopCamera();
       socket.off("attendanceReminder");
     };
   }, [user]);
 
   const startCamera = async () => {
+    if (!secretCode || !deviceId) {
+      setMessage("❌ Enter secret code and device ID first");
+      return;
+    }
+
     try {
       scanningRef.current = true;
+      setMessage("Scanning QR…");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
@@ -87,153 +78,62 @@ const StudentDashboard = ({ user }) => {
   };
 
   const markAttendance = async (qrData) => {
-    let parsed;
+    let lat = null, lng = null;
     try {
-      parsed = JSON.parse(qrData);
+      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000 }));
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
     } catch {
-      return resetScanner("❌ Invalid QR format");
+      setMessage("❌ Location access required");
+      scanningRef.current = true;
+      return;
     }
-
-    if (!parsed.subject || !parsed.issuedAt || typeof parsed.expiryMinutes !== "number") {
-      return resetScanner("❌ Invalid QR data");
-    }
-
-    const issuedAtMs = new Date(parsed.issuedAt).getTime();
-    const expiryMs = parsed.expiryMinutes * 60 * 1000;
-    if (Date.now() > issuedAtMs + expiryMs) return resetScanner("❌ QR expired");
 
     try {
       const token = localStorage.getItem("token");
       const res = await axios.post(
         "http://localhost:5000/api/attendance/mark",
-        parsed,
+        { signedQr: qrData, deviceId, lat, lng, secretCode },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMessage(`✅ ${res.data.message}`);
     } catch (err) {
-      resetScanner("❌ Attendance failed");
+      setMessage("❌ Attendance failed: " + (err.response?.data?.message || "Error"));
+      scanningRef.current = true;
     }
   };
-
-  const resetScanner = (msg) => {
-    setMessage(msg);
-    scanningRef.current = true;
-    startCamera();
-  };
-
-  const fetchRecords = async () => {
-    const token = localStorage.getItem("token");
-    const res = await axios.get("http://localhost:5000/api/attendance/my", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setRecords(res.data);
-    setShowRecords(true);
-    setShowSummary(false);
-  };
-
-  const fetchSummary = async () => {
-    const token = localStorage.getItem("token");
-    const res = await axios.get("http://localhost:5000/api/attendance/my/summary", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setSummary(res.data);
-    setShowSummary(true);
-    setShowRecords(false);
-  };
-
-  /* ===================== LEAVE FUNCTIONS (ADDED) ===================== */
-
-  const submitLeaveRequest = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) return setLeaveMessage("❌ Login required");
-    if (!leaveDate || !leaveReason)
-      return setLeaveMessage("❌ Date and reason required");
-
-    try {
-      const res = await axios.post(
-        "http://localhost:5000/api/leave/request",
-        { date: leaveDate, reason: leaveReason },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setLeaveMessage("✅ Leave submitted");
-      setLeaveDate("");
-      setLeaveReason("");
-      fetchMyLeaves();
-    } catch (err) {
-      setLeaveMessage("❌ Submission failed");
-    }
-  };
-
-  const fetchMyLeaves = async () => {
-    const token = localStorage.getItem("token");
-    try {
-      const res = await axios.get(
-        "http://localhost:5000/api/leave/my",
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setMyLeaves(res.data);
-    } catch {}
-  };
-
-  useEffect(() => {
-    fetchMyLeaves();
-  }, []);
 
   return (
-    <div className="student-dashboard-container">
-      <h2>Student Dashboard</h2>
-      <p className="scan-message">{message}</p>
+    <div className="student-attendance">
+      <h2>Mark Attendance</h2>
 
-      <video ref={videoRef} autoPlay muted playsInline className="video-feed" />
-      <canvas ref={canvasRef} style={{ display: "none" }} />
-
-      <div className="action-buttons">
-        <button onClick={fetchRecords}>📋 Attendance Records</button>
-        <button onClick={fetchSummary}>📊 Attendance Percentage</button>
-      </div>
-
-      {/* ===================== LEAVE UI (ADDED) ===================== */}
-      <div className="leave-section">
-        <h3>Leave Request</h3>
-
-        <input
-          type="date"
-          value={leaveDate}
-          onChange={(e) => setLeaveDate(e.target.value)}
-        />
-
+      <div className="input-group">
         <input
           type="text"
-          placeholder="Reason"
-          value={leaveReason}
-          onChange={(e) => setLeaveReason(e.target.value)}
+          placeholder="Secret Code (announced by teacher)"
+          value={secretCode}
+          onChange={(e) => setSecretCode(e.target.value)}
         />
-
-        <button onClick={submitLeaveRequest}>Submit Leave</button>
-        {leaveMessage && <p>{leaveMessage}</p>}
-
-        <h4>My Leave Requests</h4>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Reason</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {myLeaves.map((l) => (
-              <tr key={l._id}>
-                <td>{new Date(l.date).toLocaleDateString()}</td>
-                <td>{l.reason}</td>
-                <td>{l.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <input
+          type="text"
+          placeholder="Device ID"
+          value={deviceId}
+          onChange={(e) => setDeviceId(e.target.value)}
+        />
       </div>
+
+      <button onClick={startCamera} disabled={!secretCode || !deviceId}>
+        Start Camera & Scan QR
+      </button>
+
+      <div className="scanner">
+        <video ref={videoRef} autoPlay playsInline muted />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+      </div>
+
+      <p className="message">{message}</p>
     </div>
   );
 };
 
-export default StudentDashboard;
+export default StudentAttendance;

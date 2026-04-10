@@ -3,40 +3,111 @@ import { QRCodeCanvas } from "qrcode.react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import "./TeacherDashboard.css";
+import TeacherLeave from "./TeacherLeave";
 
 const socket = io("http://localhost:5000");
 
 export default function TeacherDashboard() {
   const [subject, setSubject] = useState("");
   const [qrValue, setQrValue] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [qrExpiresAt, setQrExpiresAt] = useState(null);
+  const [qrRemaining, setQrRemaining] = useState(0);
   const [report, setReport] = useState([]);
   const [message, setMessage] = useState("");
   const [percentage, setPercentage] = useState(null);
   const [liveCount, setLiveCount] = useState(0);
   const [pulse, setPulse] = useState(false);
+  const [activeTab, setActiveTab] = useState("session");
+  const [secretCode, setSecretCode] = useState("");
 
-  const [notifications, setNotifications] = useState([]);
+  // ---------------- CREATE SESSION ----------------
+  const createSession = async () => {
+    if (!subject) return alert("Enter subject/classId first");
+    if (!secretCode) return alert("Enter secret code for this session");
+    const token = localStorage.getItem("token");
+    if (!token) return setMessage("⚠ Please login as a teacher first");
 
-  // ---------------- GENERATE QR ----------------
-  const generateQR = () => {
-    if (!subject) {
-      alert("Enter subject first");
-      return;
+    // try to obtain teacher location for geofence
+    let location = null;
+    try {
+      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 5000 }));
+      location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch (e) {
+      // location optional but recommended
     }
 
-    const data = JSON.stringify({
-      subject,
-      issuedAt: new Date().toISOString(),
-      expiryMinutes: 5,
-    });
-
-    setQrValue(data);
-    setMessage("✅ QR generated! Students can scan now.");
+    try {
+      const res = await axios.post("http://localhost:5000/api/session/create", { classId: subject, location, secretCode }, { headers: { Authorization: `Bearer ${token}` } });
+      setSessionId(res.data.sessionId);
+      setMessage("✅ Session created. You can now generate rotating QR.");
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Failed to create session");
+    }
   };
+
+  // ---------------- CLOSE SESSION ----------------
+  const closeSession = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return setMessage("⚠ Please login as a teacher first");
+    if (!sessionId) return setMessage("⚠ No active session to close");
+
+    try {
+      await axios.post("http://localhost:5000/api/session/close", { sessionId }, { headers: { Authorization: `Bearer ${token}` } });
+      setMessage("✅ Session closed");
+      setSessionId("");
+      setQrValue("");
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Failed to close session");
+    }
+  };
+
+  // ---------------- GENERATE QR (server-signed) ----------------
+  const generateQR = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return setMessage("⚠ Please login as a teacher first");
+    if (!sessionId) return setMessage("⚠ No session. Create one first.");
+
+    try {
+      const res = await axios.post("http://localhost:5000/api/session/generate-qr", { sessionId }, { headers: { Authorization: `Bearer ${token}` } });
+      setQrValue(res.data.signedQr);
+      setMessage("✅ QR generated! Students can scan now.");
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Failed to generate QR");
+    }
+  };
+
+  // rotate QR every 30s when session active and show countdown
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let mounted = true;
+
+    const doGenerate = async () => {
+      await generateQR();
+      if (mounted) setQrExpiresAt(Date.now() + 30 * 1000);
+    };
+
+    doGenerate();
+    const genInterval = setInterval(() => doGenerate(), 30 * 1000);
+
+    const tick = setInterval(() => {
+      if (!mounted) return;
+      if (!qrExpiresAt) return setQrRemaining(0);
+      const rem = Math.max(0, Math.ceil((qrExpiresAt - Date.now()) / 1000));
+      setQrRemaining(rem);
+    }, 250);
+
+    return () => {
+      mounted = false;
+      clearInterval(genInterval);
+      clearInterval(tick);
+    };
+  }, [sessionId, qrExpiresAt]);
 
   // ---------------- FETCH REPORT ----------------
   const fetchReport = async () => {
-    const token = localStorage.getItem("token"); // ✅ FIX
+    const token = localStorage.getItem("token");
     if (!token) return setMessage("⚠ Please login as a teacher first");
     if (!subject) return alert("Enter subject to fetch report");
 
@@ -49,14 +120,9 @@ export default function TeacherDashboard() {
       setReport(res.data);
 
       if (res.data.length > 0) {
-        const presentCount = res.data.filter(
-          (r) => r.status === "Present"
-        ).length;
-
-        setPercentage(
-          Math.round((presentCount / res.data.length) * 100)
-        );
-        setLiveCount(presentCount);
+        const presentCount = res.data.filter((r) => r.status === "Present").length;
+        setPercentage(Math.round((presentCount / res.data.length) * 100));
+        setLiveCount(presentCount); // set live count
       } else {
         setPercentage(null);
         setLiveCount(0);
@@ -64,10 +130,9 @@ export default function TeacherDashboard() {
 
       setMessage(`✅ Report fetched successfully for ${subject}`);
     } catch (err) {
+      console.error(err);
       setMessage(
-        `❌ Failed to fetch report: ${
-          err.response?.data?.message || err.message
-        }`
+        `❌ Failed to fetch report: ${err.response?.data?.message || err.message}`
       );
       setReport([]);
       setPercentage(null);
@@ -77,170 +142,137 @@ export default function TeacherDashboard() {
 
   // ---------------- LIVE ATTENDANCE ----------------
   useEffect(() => {
-    if (!subject) return;
+    if (subject) {
+      socket.emit("joinSubject", subject);
 
-    socket.emit("joinSubject", subject);
+      socket.on("attendanceUpdate", () => {
+        console.log("Live attendance updated");
+        setPulse(true);
+        fetchReport(); // refresh report
 
-    socket.on("attendanceUpdate", () => {
-      setPulse(true);
-      fetchReport();
-      setTimeout(() => setPulse(false), 800);
-    });
+        setTimeout(() => setPulse(false), 800); // animation reset
+      });
 
-    return () => socket.off("attendanceUpdate");
-  }, [subject]);
-
-  // ---------------- LEAVE NOTIFICATIONS ----------------
-  useEffect(() => {
-    socket.on("leaveNotification", (data) => {
-      setNotifications((prev) => [
-        {
-          id: data._id,
-          type: "newLeave",
-          message: `New leave request from ${data.studentName}`,
-          data,
-        },
-        ...prev,
-      ]);
-    });
-
-    socket.on("leaveStatusUpdate", (data) => {
-      setNotifications((prev) => [
-        {
-          id: data._id,
-          type: "statusUpdate",
-          message: `Leave status updated: ${data.studentName} is ${data.status}`,
-          data,
-        },
-        ...prev,
-      ]);
-    });
-
-    return () => {
-      socket.off("leaveNotification");
-      socket.off("leaveStatusUpdate");
-    };
-  }, []);
-
-  // ---------------- HANDLE APPROVE / DENY ----------------
-  const handleLeaveAction = async (id, action) => {
-    try {
-      const token = localStorage.getItem("token"); // ✅ FIX
-
-      await axios.post(
-        `http://localhost:5000/api/leave/${id}/${action}`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === id
-            ? {
-                ...n,
-                type: "statusUpdate",
-                message: `Leave ${action}ed for ${n.data.studentName}`,
-              }
-            : n
-        )
-      );
-
-      socket.emit("leaveStatusChanged", { id, action });
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to update leave status");
+      return () => socket.off("attendanceUpdate");
     }
-  };
+  }, [subject]);
 
   return (
     <div className="teacher-dashboard-container">
       <h2>Teacher Dashboard</h2>
 
-      <input
-        type="text"
-        placeholder="Enter Subject"
-        value={subject}
-        onChange={(e) => setSubject(e.target.value)}
-        className="input-subject"
-      />
-
-      <div className="button-group">
-        <button onClick={generateQR} className="btn-generate">
-          Generate QR
+      <div className="tab-buttons">
+        <button onClick={() => setActiveTab("session")} className={activeTab === "session" ? "active" : ""}>
+          Session Management
         </button>
-        <button onClick={fetchReport} className="btn-report">
-          View Report
+        <button onClick={() => setActiveTab("leave")} className={activeTab === "leave" ? "active" : ""}>
+          Leave Requests
         </button>
       </div>
 
-      {qrValue && (
-        <div className="qr-section">
-          <QRCodeCanvas value={qrValue} size={250} />
-          <p>Students scan this QR</p>
-        </div>
+      {activeTab === "session" && (
+        <>
+          <input
+            type="text"
+            placeholder="Enter Subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="input-subject"
+          />
+          <br />
+          <input
+            type="text"
+            placeholder="Enter Secret Code (e.g., today's word)"
+            value={secretCode}
+            onChange={(e) => setSecretCode(e.target.value)}
+            className="input-subject"
+          />
+          <br />
+
+          <div className="button-group">
+            <button onClick={createSession} className="btn-generate">
+              Create Session
+            </button>
+            <button onClick={generateQR} className="btn-generate">
+              Generate QR
+            </button>
+            <button onClick={fetchReport} className="btn-report">
+              View Report
+            </button>
+            <button onClick={closeSession} className="btn-close" style={{ marginLeft: 8 }}>
+              Close Session
+            </button>
+          </div>
+
+          {sessionId && (
+            <div style={{ marginTop: 8 }}>
+              <strong>Session:</strong> <span style={{ fontFamily: "monospace" }}>{sessionId}</span>
+            </div>
+          )}
+
+          {qrValue && (
+            <div className="qr-section">
+              <QRCodeCanvas value={qrValue} size={250} style={{background:"#fff"}} />
+              <p>Students scan this QR</p>
+              <div style={{ marginTop: 8 }}>
+                <div style={{ height: 8, background: "#eee", borderRadius: 4, overflow: "hidden", width: 250 }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      background: "#6c6cff",
+                      width: `${((30 - (qrRemaining || 0)) / 30) * 100}%`,
+                      transition: "width 0.25s linear"
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 6, fontSize: 14 }}>
+                  {qrRemaining > 0 ? `QR expires in ${qrRemaining}s` : "Refreshing QR..."}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {message && <p className="message">{message}</p>}
+
+          {subject && (
+            <div className={`live-count ${pulse ? "pulse" : ""}`}>
+              Live Attendance: {liveCount} ✅
+            </div>
+          )}
+
+          {percentage !== null && (
+            <p className="attendance-percentage">Attendance Percentage: {percentage}%</p>
+          )}
+
+          {report.length > 0 && (
+            <div className="table-wrapper">
+              <h3>Attendance Report for {subject}</h3>
+              <table border="1" cellPadding="8">
+                <thead>
+                  <tr>
+                    <th>Student Name</th>
+                    <th>Email</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.map((r, idx) => (
+                    <tr key={idx}>
+                      <td>{r.studentId?.name || "N/A"}</td>
+                      <td>{r.studentId?.email || "N/A"}</td>
+                      <td>{new Date(r.date).toLocaleDateString()}</td>
+                      <td>{r.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
-      {message && <p className="message">{message}</p>}
-
-      {subject && (
-        <div className={`live-count ${pulse ? "pulse" : ""}`}>
-          Live Attendance: {liveCount} ✅
-        </div>
-      )}
-
-      {percentage !== null && (
-        <p className="attendance-percentage">
-          Attendance Percentage: {percentage}%
-        </p>
-      )}
-
-      {report.length > 0 && (
-        <div className="table-wrapper">
-          <h3>Attendance Report for {subject}</h3>
-          <table border="1">
-            <thead>
-              <tr>
-                <th>Student Name</th>
-                <th>Email</th>
-                <th>Date</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.map((r, idx) => (
-                <tr key={idx}>
-                  <td>{r.studentId?.name || "N/A"}</td>
-                  <td>{r.studentId?.email || "N/A"}</td>
-                  <td>{new Date(r.date).toLocaleDateString()}</td>
-                  <td>{r.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {notifications.length > 0 && (
-        <div className="notifications-panel">
-          <h3>Notifications</h3>
-          <ul>
-            {notifications.map((n) => (
-              <li key={n.id} className={n.type}>
-                <span>{n.message}</span>
-                {n.type === "newLeave" && (
-                  <>
-                    <button onClick={() => handleLeaveAction(n.id, "approve")}>
-                      ✅ Approve
-                    </button>
-                    <button onClick={() => handleLeaveAction(n.id, "deny")}>
-                      ❌ Deny
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {activeTab === "leave" && <TeacherLeave />}
     </div>
   );
 }

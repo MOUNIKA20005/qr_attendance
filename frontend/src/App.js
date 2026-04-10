@@ -5,7 +5,7 @@ import StudentDashboard from "./components/StudentDashboard";
 import TeacherDashboard from "./components/TeacherDashboard";
 import StudentAttendance from "./components/StudentAttendance";
 import Landing from "./components/Landing";
-import AdminDashboard from "./components/AdminDashboard"; // adjust path if needed
+import AdminDashboard from "./components/AdminDashboard"; // adjust path if needed
 import Report from "./components/Report";
 
 
@@ -39,4 +39,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;

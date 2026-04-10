@@ -10,11 +10,7 @@ const userSchema = new mongoose.Schema({
     enum: ["student", "teacher", "admin"],
     required: true   // ❗ DO NOT DEFAULT HERE
   },
-  className:{type:String},
-  profileImage:{
-    type:String,
-    default:""
-  }
-},{timestamps:true});
+  registeredDeviceId: { type: String, default: null }
+});
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("User", userSchema);

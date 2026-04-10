@@ -117,8 +117,15 @@ router.patch("/:id/status", auth, async (req, res) => {
       return res.status(404).json({ message: "Leave request not found" });
     }
 
-    leave.status = status;
+    leave.status = status.charAt(0).toUpperCase() + status.slice(1);
     await leave.save();
+
+    // Notify the student via socket
+    const io = req.app.get("io");
+    io.to(leave.studentId.toString()).emit("leaveStatusUpdate", {
+      status: leave.status,
+      date: leave.date
+    });
 
     res.json({ message: `Leave ${status}` });
   } catch (err) {

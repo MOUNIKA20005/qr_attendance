@@ -9,78 +9,55 @@ dotenv.config();
 
 const app = express();
 
-/* ===================== MIDDLEWARE ===================== */
 app.use(cors({
   origin: "http://localhost:3000",
   credentials: true
 }));
 app.use(express.json());
 
-/* ===================== ROUTES ===================== */
-app.use("/api/auth", require("./routes/auth"));
-app.use("/api/test", require("./routes/test"));
-app.use("/api/qr", require("./routes/qr"));
-app.use("/api/attendance", require("./routes/attendance"));
-app.use("/api/admin", require("./routes/admin"));
-app.use("/api/report", require("./routes/report")); 
-app.use("/api/analytics", require("./routes/analytics"));
-app.use("/api/leave", require("./routes/leave"));
-
-/* ===================== TEST ROOT ===================== */
-app.get("/", (req, res) => res.send("QR Attendance Backend Running"));
-app.get("/test-report", (req, res) => res.send("REPORT TEST OK"));
-
-/* ===================== DATABASE ===================== */
+// Connect to MongoDB first
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
+  .then(() => {
+    console.log("✅ MongoDB connected");
+
+    // Require routes after DB connection
+    app.use("/api/auth", require("./routes/auth"));
+    app.use("/api/attendance", require("./routes/attendance"));
+    app.use("/api/session", require("./routes/session"));
+    app.use("/api/qr", require("./routes/qr"));
+    app.use("/api/device", require("./routes/device"));
+    app.use("/api/leave", require("./routes/leave"));
+    app.use("/api/report", require("./routes/report"));
+    app.use("/api/analytics", require("./routes/analytics"));
+    app.use("/api/admin", require("./routes/admin"));
+    app.use("/api/admin-analytics", require("./routes/adminAnalytics"));
+    app.use("/api/test", require("./routes/test"));
+
+    const PORT = process.env.PORT || 5000;
+    const server = http.createServer(app);
+
+    const io = new Server(server, {
+      cors: {
+        origin: "http://localhost:3000",
+        methods: ["GET", "POST"]
+      }
+    });
+
+    io.on("connection", (socket) => {
+      console.log("🟢 Client connected:", socket.id);
+      socket.on("disconnect", () => {
+        console.log("🔴 Client disconnected:", socket.id);
+      });
+    });
+
+    // Store io instance in app for routes to use
+    app.set("io", io);
+
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running at http://localhost:${PORT}`);
+    });
+  })
   .catch(err => {
     console.error("❌ MongoDB connection failed:", err);
     process.exit(1);
   });
-
-/* ===================== SERVER + SOCKET ===================== */
-const PORT = process.env.PORT || 5000;
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
-});
-
-// Make socket accessible inside routes
-app.set("io", io);
-
-/* ===================== SOCKET EVENTS ===================== */
-io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
-
-  socket.on("joinSubject", (subject) => {
-    socket.join(subject);
-    console.log(`📌 ${socket.id} joined subject: ${subject}`);
-  });
-
-  // Join personal room for reminders/notifications
-  socket.on("joinRoom", (userId) => {
-    socket.join(userId);
-    console.log(`📌 ${socket.id} joined personal room: ${userId}`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
-  });
-});
-
-/* ===================== GLOBAL ERROR HANDLER ===================== */
-app.use((err, req, res, next) => {
-  console.error("🔥 Unhandled error:", err);
-  res.status(500).json({ message: "Internal server error" });
-});
-
-/* ===================== START SERVER ===================== */
-server.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
-
-module.exports = { app, io }; // export io for routes if needed

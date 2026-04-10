@@ -3,12 +3,11 @@ import { useNavigate } from "react-router-dom";
 import "./Landing.css";
 
 export default function Landing() {
-  const featuresRef = useRef(null);
-  const aboutRef = useRef(null);
+  const featuresRef = useRef();
+  const aboutRef = useRef();
   const [featuresVisible, setFeaturesVisible] = useState(false);
   const navigate = useNavigate();
 
-  // FEATURE ANIMATION
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => setFeaturesVisible(entry.isIntersecting),
@@ -23,43 +22,20 @@ export default function Landing() {
   }, []);
 
   const scrollToSection = (ref) => {
-    if (!ref.current) return;
-    window.scrollTo({
-      top: ref.current.offsetTop - 80,
-      behavior: "smooth",
-    });
-  };
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (ref.current) {
+      window.scrollTo({
+        top: ref.current.offsetTop - 50,
+        behavior: "smooth",
+      });
+    }
   };
 
   return (
     <div className="landing-container">
-
-      {/* NAVBAR */}
-      <nav className="navbar">
-        <div className="nav-logo" onClick={scrollToTop}>
-          QR Attendance Pro
-        </div>
-
-        <ul className="nav-links">
-          <li onClick={scrollToTop}>Home</li>
-          <li onClick={() => scrollToSection(featuresRef)}>Features</li>
-          <li onClick={() => scrollToSection(aboutRef)}>About</li>
-          <li className="nav-btn" onClick={() => navigate("/login")}>
-            Login
-          </li>
-        </ul>
-      </nav>
-
-      {/* HERO */}
+      {/* Hero Section */}
       <section className="hero">
         <h1 className="hero-title">QR Attendance Pro</h1>
-        <p className="hero-subtitle">
-          Instant attendance tracking using QR codes
-        </p>
-
+        <p className="hero-subtitle">Instant attendance tracking using QR codes</p>
         <div className="hero-buttons">
           <button
             className="btn btn-primary"
@@ -67,55 +43,58 @@ export default function Landing() {
           >
             Student / Teacher Login
           </button>
-
           <button
-            className="btn btn-outline"
+            className="btn btn-primary"
             onClick={() => scrollToSection(featuresRef)}
           >
             View Features
           </button>
+          <button
+            className="btn btn-outline"
+            onClick={() => scrollToSection(aboutRef)}
+          >
+            Learn More
+          </button>
         </div>
       </section>
 
-      {/* FEATURES */}
+      {/* Features Section */}
       <section
+        id="features"
         ref={featuresRef}
         className={`features ${featuresVisible ? "visible" : ""}`}
       >
         <h2>Features</h2>
-
         <div className="features-grid">
           <div className="feature-card">
             <h3>QR Attendance</h3>
-            <p>Students mark attendance instantly.</p>
+            <p>Students mark attendance instantly using QR codes.</p>
           </div>
-
           <div className="feature-card">
-            <h3>Live Reports</h3>
-            <p>Teachers get real-time attendance data.</p>
+            <h3>Real-Time Reports</h3>
+            <p>Teachers can view daily and monthly attendance reports.</p>
           </div>
-
           <div className="feature-card">
             <h3>Secure Login</h3>
-            <p>JWT-based authentication.</p>
+            <p>JWT-based login ensures data privacy for all users.</p>
           </div>
         </div>
       </section>
 
-      {/* ABOUT */}
-      <section ref={aboutRef} className="about">
-        <h2>About</h2>
+      {/* About Section */}
+      <section id="about" ref={aboutRef} className="about">
+        <h2>About QR Attendance Pro</h2>
         <p>
-          Built for colleges to eliminate proxy attendance and save time using
-          QR-based verification.
+          QR Attendance Pro is designed for schools and colleges to make attendance marking
+          easy, fast, and error-free. Students simply scan the QR code and teachers get
+          instant reports in real time.
         </p>
       </section>
 
-      {/* FOOTER */}
+      {/* Footer */}
       <footer className="footer">
-        © 2026 QR Attendance Pro
+        <p>© 2026 QR Attendance Pro. All rights reserved.</p>
       </footer>
-
-    </div>
-  );
+    </div>
+  );
 }

@@ -199,9 +199,9 @@ router.get("/heatmap", auth, async (req, res) => {
     res.json(heatmap);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Heatmap analytics failed" });
-  }
+    res.status(500).json({ message: "Heatmap analytics failed" });
+  }
 });
 
 
-module.exports = router;
+module.exports = router;

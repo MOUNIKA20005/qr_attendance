@@ -2,7 +2,6 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const auth = require("../middleware/auth"); // ✅ REQUIRED
 
 const router = express.Router();
 
@@ -11,6 +10,7 @@ router.post("/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
+    // VALIDATION
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "All fields required" });
     }
@@ -30,7 +30,7 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role
+      role // ✅ TAKE ROLE FROM FRONTEND
     });
 
     res.json({
@@ -61,8 +61,8 @@ router.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       {
-        _id: user._id,     // ✅ CONSISTENT
-        role: user.role
+        userId: user._id,
+        role: user.role // ✅ REAL ROLE
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
@@ -80,23 +80,4 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ================= GET PROFILE ================= */
-router.get("/me", auth, async (req, res) => {
-  const user = await User.findById(req.user.id).select("-password");
-  res.json(user);
-});
-
-/* ================= UPDATE PROFILE ================= */
-router.put("/me", auth, async (req, res) => {
-  const { name, className } = req.body;
-
-  const user = await User.findByIdAndUpdate(
-    req.user._id,
-    { name, className },
-    { new: true }
-  ).select("-password");
-
-  res.json(user);
-});
-
-module.exports = router;
+module.exports = router;

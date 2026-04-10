@@ -12,19 +12,23 @@ export default function TeacherLeave() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setLeaves(res.data);
-    } catch {}
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Failed to fetch leaves");
+    }
   };
 
   const updateLeave = async (id, status) => {
     try {
-      const res = await axios.put(
-        `http://localhost:5000/api/leave/${id}`,
+      const res = await axios.patch(
+        `http://localhost:5000/api/leave/${id}/status`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMessage(res.data.message);
       fetchLeaves();
-    } catch {}
+    } catch (err) {
+      setMessage(err.response?.data?.message || "Error updating leave");
+    }
   };
 
   useEffect(() => { fetchLeaves(); }, []);
@@ -53,8 +57,8 @@ export default function TeacherLeave() {
               <td>
                 {l.status === "Pending" && (
                   <>
-                    <button onClick={() => updateLeave(l._id, "Approved")}>✅ Approve</button>
-                    <button onClick={() => updateLeave(l._id, "Rejected")}>❌ Reject</button>
+                    <button onClick={() => updateLeave(l._id, "approved")}>✅ Approve</button>
+                    <button onClick={() => updateLeave(l._id, "rejected")}>❌ Reject</button>
                   </>
                 )}
               </td>

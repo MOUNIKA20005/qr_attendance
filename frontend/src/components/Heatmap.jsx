@@ -10,9 +10,9 @@ export default function Heatmap({ token, subjectFilter, from, to }) {
       const params = {};
 
       if (subjectFilter) params.subject = subjectFilter;
-      if (from || to) {
-        if (from) params.from = from;
-        if (to) params.to = to;
+      if (from && to) {
+        params.from = from;
+        params.to = to;
       }
 
       const res = await axios.get(
@@ -20,7 +20,7 @@ export default function Heatmap({ token, subjectFilter, from, to }) {
         { headers, params }
       );
 
-      setHeatmapData(res.data || []);
+      setHeatmapData(res.data);
     } catch (err) {
       console.error("Heatmap fetch failed", err);
     }
@@ -33,39 +33,44 @@ export default function Heatmap({ token, subjectFilter, from, to }) {
   return (
     <div style={{ marginTop: 40 }}>
       <h3>📊 Attendance Heatmap</h3>
-
-      {heatmapData.length === 0 ? (
-        <p>No data available</p>
-      ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th>Date</th>
-              {heatmapData[0].subjects.map((s) => (
-                <th key={s.subject}>{s.subject}</th>
+      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <thead>
+          <tr>
+            <th style={{ border: "1px solid #ccc", padding: 6 }}>Date</th>
+            {heatmapData[0]?.subjects?.map((s) => (
+              <th
+                key={s.subject}
+                style={{ border: "1px solid #ccc", padding: 6 }}
+              >
+                {s.subject}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {heatmapData.map((row) => (
+            <tr key={row.date}>
+              <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                {row.date}
+              </td>
+              {row.subjects.map((s) => (
+                <td
+                  key={s.subject}
+                  style={{
+                    border: "1px solid #ccc",
+                    padding: 6,
+                    background: `rgba(34, 197, 94, ${s.percentage / 100})`,
+                    color: s.percentage > 50 ? "white" : "black",
+                    textAlign: "center",
+                  }}
+                >
+                  {s.present}/{s.total}
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {heatmapData.map((row) => (
-              <tr key={row.date}>
-                <td>{row.date}</td>
-                {row.subjects.map((s) => (
-                  <td
-                    key={s.subject}
-                    style={{
-                      background: `rgba(34,197,94,${s.percentage / 100})`,
-                      textAlign: "center",
-                    }}
-                  >
-                    {s.present}/{s.total}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

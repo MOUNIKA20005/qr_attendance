@@ -28,17 +28,25 @@ export default function Analytics() {
   const headers = { Authorization: `Bearer ${token}` };
 
   // FETCH ANALYTICS
-  const fetchAnalytics = async (filters = {}) => {
+  const fetchAnalytics = async () => {
     try {
-      const subjectRes = await axios.get(
-        "http://localhost:5000/api/analytics/subject-wise",
-        { headers, params: filters }
-      );
+      const params = {};
+      if (subject) params.subject = subject;
+      if (from && to) {
+        params.from = from;
+        params.to = to;
+      }
 
-      const dailyRes = await axios.get(
-        "http://localhost:5000/api/analytics/daily",
-        { headers, params: filters }
-      );
+      const [subjectRes, dailyRes] = await Promise.all([
+        axios.get("http://localhost:5000/api/analytics/subject-wise", {
+          headers,
+          params,
+        }),
+        axios.get("http://localhost:5000/api/analytics/daily", {
+          headers,
+          params,
+        }),
+      ]);
 
       setSubjectData(subjectRes.data || []);
       setDailyData(dailyRes.data || []);
@@ -47,23 +55,15 @@ export default function Analytics() {
     }
   };
 
-  // APPLY BUTTON HANDLER (THIS IS THE FIX)
-  const handleApply = () => {
-    const filters = {};
-    if (subject.trim()) filters.subject = subject;
-    if (from) filters.from = from;
-    if (to) filters.to = to;
-
-    fetchAnalytics(filters);
-  };
-
   // EXPORT CSV
   const exportCSV = async () => {
     try {
       const params = {};
-      if (subject.trim()) params.subject = subject;
-      if (from) params.from = from;
-      if (to) params.to = to;
+      if (subject) params.subject = subject;
+      if (from && to) {
+        params.from = from;
+        params.to = to;
+      }
 
       const res = await axios.get(
         "http://localhost:5000/api/analytics/export",
@@ -89,14 +89,14 @@ export default function Analytics() {
   };
 
   useEffect(() => {
-    fetchAnalytics(); // initial load
+    fetchAnalytics();
   }, []);
 
   return (
     <div style={{ background: "white", padding: 20, borderRadius: 12 }}>
       <KpiCards />
 
-      <h2>📊 Attendance Analytics</h2>
+      <h2 style={{ marginBottom: 20 }}>📊 Attendance Analytics</h2>
 
       {/* FILTERS */}
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -106,19 +106,10 @@ export default function Analytics() {
           onChange={(e) => setSubject(e.target.value)}
         />
 
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-        />
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
 
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-        />
-
-        <button onClick={handleApply}>Apply</button>
+        <button onClick={fetchAnalytics}>Apply</button>
         <button onClick={exportCSV}>Export CSV</button>
       </div>
 
@@ -130,7 +121,7 @@ export default function Analytics() {
             <XAxis dataKey="_id" />
             <YAxis />
             <Tooltip />
-            <Bar dataKey="total" />
+            <Bar dataKey="total" fill="#2563eb" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -141,19 +132,13 @@ export default function Analytics() {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dailyData}>
             <XAxis dataKey="_id" />
-            <YAxis allowDecimals={false} />
+            <YAxis />
             <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="present"
-              strokeWidth={3}
-              dot={{ r: 4 }}
-            />
+            <Line dataKey="count" stroke="#16a34a" />
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      <Heatmap token={token} subjectFilter={subject} from={from} to={to} />
-    </div>
-  );
+      <Heatmap token={token} subjectFilter={subject} from={from}to={to}/>
+    </div>
+  );
 }
